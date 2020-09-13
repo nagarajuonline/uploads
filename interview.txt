@@ -1,0 +1,292 @@
+
+what are histograms in oracle?
+row chaining and row migration? how can i avoid?
+how can i improve rman performance?
+Snapshot too old
+How can we check DATAPUMP file is corrupted or not?
+what the importance of root scripts?
+You have collection of patch (nearly 100 patches) or patchset. How can you apply only one patch from it?
+
+
+listener status - UNKNOWN/READY
+
+Unknown - static regis
+ready - dynamic regis
+
+
+
+
+
+DBA
+----
+Architechture
+
+	select /update/ insert queries how can these executed
+	i lost my redologs. what happends to my database?
+	What is a checkpoint. What is its importance?
+	Background process
+	PMON process? what is the use if pmon?
+	while taking backup i dropped a table? whether the table comes in backup? what is snapshot control file?
+	Hot backup - why logfile switch after hot backup?
+Snapshot too old
+
+Exports/Imports
+===========
+
+what is the use of ACCESS_METHOD in expdp? (Doc ID 2035840.1)
+ACCESS_METHOD=EXTERNAL_TABLE
+
+How can we check DATAPUMP file is corrupted or not?
+Sometimes we may be in situation, to check whether the dumpfile exported long time back is VALID or not or our application team is saying that the dumpfile provided by us is corrupted.
+Use SQLFILE Parameter with import script to detect corruption. The use of this parameter will read the entire datapump export dumpfile and will report if corruption is detected.
+impdp system/*** directory=dump_dir dumpfile=expdp.dmp logfile=corruption_check.log sqlfile=corruption_check.sql 
+
+
+
+RMAN
+=====
+CROSSCHECK and Validate
+Obsolete and expiry
+Dropped a table while exporting. what happens?
+
+Perf tuning
+ORA - 04030,04031,00600,0755 errors
+Listeners/tnsnames
+AWR/Snapshot analysis
+SQL Tuning
+Waitevents
+Flashback Technology
+memory parameters
+Upgrade
+
+Patching
+
+ - APPLY and NAPPLY,
+patch and patchset
+
+You have collection of patch (nearly 100 patches) or patchset. How can you apply only one patch from it?
+With Napply itself (by providing patch location and specific patch id) you can apply only one patch from a collection of extracted patch. For more information check the opatch util NApply –help. It will give you clear picture.
+For Example:
+
+opatch util napply <patch_location> -id 9 -skip_subset -skip_duplicate
+
+
+
+Database clonig
+
+
+
+
+DG
+===
+Physical stnadby
+Logical standby
+Snapshot standby
+Dataguard Broker
+ACTIVE DATAGUARD
+What is failover and swith over
+What are redo transport services?
+do we really need a SRL?
+The mode can be switched using the following commands. Note the alterations in the redo transport attributes.
+-- Maximum Availability.
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=db11g_stby AFFIRM SYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=DB11G_STBY';
+ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE AVAILABILITY;
+-- Maximum Performance.
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=db11g_stby NOAFFIRM ASYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=DB11G_STBY';
+ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE PERFORMANCE;
+
+-- Maximum Protection.
+ALTER SYSTEM SET LOG_ARCHIVE_DEST_2='SERVICE=db11g_stby AFFIRM SYNC VALID_FOR=(ONLINE_LOGFILES,PRIMARY_ROLE) DB_UNIQUE_NAME=DB11G_STBY';
+SHUTDOWN IMMEDIATE;
+STARTUP MOUNT;
+ALTER DATABASE SET STANDBY DATABASE TO MAXIMIZE PROTECTION;
+
+ALTER DATABASE OPEN;
+
+
+RAC
+====
+
+My grid version is 11.2.0.2 and i want to install older version of database (10g database) on this grid. How can i install?
+Yes. you can install. But you need to pin the nodes
+For example, to pin nodes node3 and node4, log in as root and enter the following command:
+$ crsctl pin css -n node3 node4
+
+LMON—Global Enqueue Service Monitor
+LMD—Global Enqueue Service Daemon
+LMS—Global Cache Service Process
+LCK0—Instance Enqueue Process
+RMSn—Oracle RAC Management Processes (RMSn)
+RSMN—Remote Slave Monitor
+One node RAC
+How cache fusion works?
+how can i check which node is master node?
+How a connection established in RAC database?
+SCAN - How scan works?
+VPM
+DNS
+KERNAL PARAMETERS
+SHELL LIMITS
+NFS
+what is hot patching?
+Server side\client side failover
+TAF
+split brain
+ocr,ocssd,evmd,where log files occured in rac?
+OCR,OLR
+UNDO is shared among database clusters?
+srvctl enable,start,add
+CLUFY
+HOW will you recover ocr?
+
+Voting Disk — Oracle RAC uses the voting disk to manage cluster membership by way of a health check and arbitrates cluster ownership among the instances in case of network failures. The voting disk must reside on shared disk.
+
+Oracle Cluster Registry (OCR) — Maintains cluster configuration information as well as configuration information about any cluster database within the cluster. The OCR must reside on shared disk that is accessible by all of the nodes in your cluster
+
+
+Why we need odd number of votedisks?
+
+47. How do you backup voting disk
+#dd if=voting_disk_name of=backup_file_name
+
+48. How do I identify the voting disk location
+#crsctl query css votedisk
+
+
+ASM
+====
+What are background process of ASM
+
+Q: Can you create users in ASM instance?
+
+A: Yes, absolutely.
+
+Q: Why?
+
+A: For better security.
+
+Q: I was told there is no database associated with ASM, it is just an instance, so where is this user really created?
+
+A: You must have a password file to create users. The users are added to password file.
+
+Q: Ha! are there default users?
+
+A: Yes, SYS and ASMSNMP are default users.
+
+Q: What privileges can I grant to a user?
+
+A: You can grant SYSDBA, SYSASM or SYSOPER privileges.
+
+Q: How do you create a new user?
+
+A: Use SQL*Plus, connect to the instance as SYSASM for all user management. You may also use orapwusr command in asmcmd.
+
+Q: Can you show an example of creating a new user using SQL*Plus?
+
+
+GGATE
+======
+What is CSN (Commit Sequence Number)?
+What is supplemental logging? Why it is required?
+What is Trandata enabling?
+What is defgen utility?
+What is a Passive-Alias Extract?
+Handle Collision/NOHANDLE Collision
+
+
+Unix, Shell scripting
+================
+Do you difference paging and swaping?
+I want to check how many CPU's are there on my server? which command?
+
+i/o issue at server level? how can i check?
+
+
+1) 10GB query with 1GB SGA --> Select , Update, Insert (what wait event will occur at this)
+2) What happens to the database if i made MEMORY_TARGET=0
+3) AWR /ASH analysis
+4) Database level ADDM report and instance level addm report
+5) Difference between 10g and 11g RAC
+6) Partition issue
+7) When a node can reboot?
+8) at commit what will happen?
+9) can you expain how an instance recovery will be performed by SMON?
+10) MEMORY_TARGET=0, what happens to the database?
+11) what is snapshot control file?
+12) what is external user authentication? REMOTE_OS_AUTHENT
+13) 
+SQL> DROP TABLE trans;
+While the drop table operation is in progress, user B executes the following command on
+the same table:
+SQL> DELETE FROM trans WHERE tr_type='SL';
+Which statement is true regarding the DELETE command?
+C. It fails to delete the records because the table is locked in EXCLUSIVE mode.
+14) ADRCI
+15) implementing reverse key index?
+Prevent contention on the highest leaf block when using sequences to generate keys
+16) You notice that the performance of the database has degraded because of frequent checkpoints. 
+
+17)ALTER TABLESPACE users BEGIN BACKUP
+*
+ERROR at line 1:
+ORA-01123: cannot start online backup; media recovery not enabled
+
+B. The database is in NOARCHIVELOG mode.
+
+18) 
+In your database instance, the STATISTICS_LEVEL initialization parameter is set to
+BASIC. What is the impact of this setting?
+
+C. The snapshots for the Automatic Workload Repository (AWR) are not generated
+automatically
+
+
+19)
+Which statement is true about the UNDO_RETENTION parameter when retention
+guarantee is not enabled?
+C. It is the minimum time period up to which the committed undo data would be retained if free undo space is available.
+
+
+20) 
+Your database instance is configured with automatic undo management and the
+UNDO_RETENTION parameter is set to 900 seconds. You executed the following
+command to enable retention guarantee:
+SQL> ALTER TABLESPACE undotbs1 RETENTION GUARANTEE;
+What effect would this command have on the database?
+
+B. The extents containing committed undo in the undo tablespace are not overwritten for at
+least 15 minutes
+
+21) 
+
+FAST_START_MTTR_TARGET = 0
+LOG_CHECKPOINT_INTERVAL = 0
+Which two will be the implications of these values in your database? (Choose two.)
+
+B. The MTTR advisor will be disabled.
+C. Automatic checkpoint tuning will be disabled.
+
+
+22) MMON and MMAN
+
+Which statement is true about the Manageability Monitor (MMON) background process?
+A. It transfers statistics from memory to disk at regular intervals.
+
+23) external table vs temprory tables
+
+24) 
+
+You have set Tablespace Full Metrics Threshold values for the USERS tablespace as
+follows:
+Warning (%): 90
+Critical (%): 95
+Which background process is responsible for issuing alerts when the threshold is crossed?
+
+D. Manageability Monitor process (MMON)
+
+25) BITMAP and BTREE indexes
+
+26) What is Database Replay?
+
+
+http://select-star-from.blogspot.in/2013/07/oracle-dba-interview-questions-answers_24.html

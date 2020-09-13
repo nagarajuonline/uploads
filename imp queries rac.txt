@@ -1,0 +1,173 @@
+
+===========================
+To kill a session in RAC
+===========================
+
+select sid,serial#,INST_ID from gv$session where username='&username';
+
+SID  SERIAL# INST_ID
+----------------------
+104  2034     2
+
+alter system kill session '104,2034,@2';
+
+
+
+Select * from v$active_instances;
+
+
+
+Tracing LMS process
+==========================
+
+Tracing LMS processes using DBMS_SYSTEM.set_ev
+Tracing LMS processes ( or any other RAC background process )  using DBMS_SYSTEM.set_ev
+
+Select sid, serial#  process from  gv$session    
+SQL>  select inst_id,sid, serial#, program from gv$session where program like '%LMS%' and INST_ID=3;
+   INST_ID        SID    SERIAL# PROGRAM
+---------- ---------- ---------- ------------------------------------------------
+         3         66          1 oracle@grac43.example.com (LMS0)
+         3        128          1 oracle@grac43.example.com (LMS1)
+
+Connect to instance 3 and enable tracing for LMS0 and LMS1 process 
+SQL> EXEC DBMS_SYSTEM.set_ev(si=>66 ,se=>1,  ev=>10046, le=>12,  nm=>'');
+SQL> EXEC DBMS_SYSTEM.set_ev(si=>128  ,se=>1,  ev=>10046, le=>12,  nm=>'');
+
+Check for tracefile grac43_lms0_XXX and grac43_lms1_XXX in your trace directory and 
+display wait events by suppressing  "gcs remote message" messages
+# cat grac43_lms0_7493.trc | grep -v "gcs remote message"
+*** 2014-02-11 10:15:08.807
+WAIT #0: nam='gcs log flush sync' ela= 2722 waittime=30 poll=0 event=138 obj#=0 tim=1392110108814702
+
+Disable tracing:
+EXEC DBMS_SYSTEM.set_ev(si=>66   ,se=>1,  ev=>10046, le=>0,  nm=>'');
+EXEC DBMS_SYSTEM.set_ev(si=>128  ,se=>1,  ev=>10046, le=>0,  nm=>'');
+
+
+Node reboot happened- check below logs on both nodes
+======================================================
+
+ocssd.log
+------------
+corracrc201p.in.sensis.com.au::/ora/app/11.2.0/oragrid/log/corracrc201p/cssd# cat ocssd.log | egrep  -i 'Removal|evict|30000|network HB'
+
+server alertlog
+----------------
+corracrc201p.in.sensis.com.au::/ora/app/11.2.0/oragrid/log/corracrc201p# cat alertcorracrc201p.log
+
+instance alert log
+-------------------
+
+=========================================
+Node reboot issue - node eviction issue
+==========================================
+
+
+1) looking for messages such as “Oracle CSSD failure. Rebooting for cluster integrity” in /var/log/messages
+
+2) inspecting the ocssd log for “Begin Dump” or “End Dump” messages
+
+
+
+High CPU Utilization
+=====================
+cat <db_1>_lmhb_7768.trc | grep StatCheckCPU
+
+ex:
+----
+cat YPOLP31_lmhb_25221.trc| grep StatCheckCPU
+
+========================
+To know Master node
+=====================
+
+grep -i "OCR MASTER" $GI_HOME/log/<node_name>/crsd/crsd.l*
+
+Out put will be
+-----------------
+[oragrid@oleracrs02p ~]$ grep -i "OCR MASTER" $ORACLE_HOME/log/oleracrs02p/crsd/crsd.l*
+/ora/app/11.2.0/oragrid/log/oleracrs02p/crsd/crsd.l07:2015-05-18 18:17:20.591: [  OCRMAS][1125132608]th_master:13: I AM THE NEW OCR MASTER at incar 14. Node Number 2
+[oragrid@oleracrs02p ~]$
+
+
+
+====================
+Diagcollection.pl
+====================
+
+Diagcollection.pl is a script used to collect the diagnostic information from clusterware installation. 
+The script provides you with additional information so that the Oracle Support can resolve problems.
+
+Invoking diagcollection script
+
+Step 1: Log in as Root
+Step 2: Set up the following environment variables
+
+# export ORACLE_BASE= /..../
+# export ORACLE_HOME = /..../
+# export ORA_CRS_HOME = /.../
+
+Step 3: Run the script
+
+# cd $ORA_CRS_HOME/bin
+# ./diagcollection.pl -collect
+
+
+The script generates the following files in the local directory,
+
+basData_.tar.gz (contains logfiles from ORACLE_BASE/admin)
+crsData_.tar.gz (logs from $ORA_CRS_HOME/log/)
+ocrData_.tar.gz (results of ocrcheck, ocrdump and ocr backups)
+oraData_.tar.gz (logs from $ORACLE_HOME/log/)
+
+To collect only subset of log files , you can invoke as follows,
+
+# ./diagcollection.pl -collect -crs (CRS log files)
+# ./diagcollection.pl -collect -oh (ORACLE_HOME logfiles)
+# ./diagcollection.pl -collect -ob (ORACLE_BASE logfiles)
+# ./diagcollection.pl -collect -all (default)
+
+To clean out the files generated from the last run
+
+# ./diagcollection.pl -clean
+
+To extract only the core files found in the generated files and store it in a text file,
+
+# ./diagcollection.pl -coreanalyze
+
+=======================
+OCR BACKUP/RECOVERY
+=========================
+http://oracledbabay.blogspot.com.au/2012/10/ocr-backup-types-in-11gr2-rac-with-asm.html
+
+
+======================================================
+ADDM report at database level (Not at instance level)
+=======================================================
+
+var tname VARCHAR2(60);
+BEGIN
+  :tname := 'my_database_analysis_mode_task';
+  DBMS_ADDM.ANALYZE_DB(:tname, <source_snap_id>, <Target_snap_id>);
+END;
+/
+
+to display report
+----------------------
+
+SELECT DBMS_ADDM.GET_REPORT('my_database_analysis_mode_task') FROM DUAL;
+
+example
+---------
+
+var tname VARCHAR2(60);
+BEGIN
+  :tname := 'my_database_analysis_mode_task';
+  DBMS_ADDM.ANALYZE_DB(:tname, 16516, 16518);
+END;
+/
+
+SELECT DBMS_ADDM.GET_REPORT('my_database_analysis_mode_task') FROM DUAL;
+
+

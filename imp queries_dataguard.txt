@@ -1,0 +1,722 @@
+
+
+Script to check archive 
+
+select THREAD#,max(SEQUENCE#) from gv$log_history group by thread#;
+
+SELECT ARCH.THREAD# "Thread", ARCH.SEQUENCE# "Last Sequence Received", APPL.SEQUENCE# "Last Sequence Applied", (ARCH.SEQUENCE# - APPL.SEQUENCE#) "Difference"
+FROM  (SELECT THREAD# ,SEQUENCE# FROM GV$ARCHIVED_LOG WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM GV$ARCHIVED_LOG GROUP BY THREAD#)) ARCH,(SELECT THREAD# ,SEQUENCE# FROM GV$LOG_HISTORY WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM GV$LOG_HISTORY GROUP BY THREAD#)) APPL WHERE ARCH.THREAD# = APPL.THREAD# ORDER BY 1;
+
+
+
+
+=====================================================================================
+START - Complete details of Dataguard environment
+=====================================================================================
+
+set echo off
+set feedback off
+column timecol new_value timestamp
+column spool_extension new_value suffix
+SELECT TO_CHAR(sysdate,'yyyymmdd_hh24mi') timecol, '.html' spool_extension FROM dual;
+
+column output new_value dbname
+SELECT value || '_' output FROM v$parameter WHERE name = 'db_unique_name';
+
+spool new_dg_prim_diag_&&dbname&&timestamp&&suffix
+set linesize 2000
+set pagesize 50000
+set numformat 999999999999999
+set trim on
+set trims on
+set markup html on
+set markup html entmap off
+set feedback on
+
+ALTER SESSION SET nls_date_format = 'DD-MON-YYYY HH24:MI:SS';
+SELECT TO_CHAR(sysdate) time FROM dual;
+
+set echo on
+
+SELECT database_role role, name, db_unique_name, platform_id, open_mode, log_mode, flashback_on, protection_mode, protection_level FROM v$database;
+
+column force_logging format a13 tru
+column remote_archive format a14 tru
+column supplemental_log_data_pk format a24 tru
+column supplemental_log_data_ui format a24 tru
+column dataguard_broker format a16 tru
+
+SELECT force_logging, remote_archive, supplemental_log_data_pk, supplemental_log_data_ui, switchover_status, dataguard_broker FROM v$database;  
+
+column version format a10 tru
+
+SELECT version, modified, status FROM dba_registry WHERE comp_id = 'CATPROC';
+
+SELECT thread#, instance, status FROM v$thread;
+
+column host_name format a32 wrap
+
+SELECT thread#, instance_name, host_name, version, archiver, log_switch_wait FROM gv$instance ORDER BY thread#;
+
+SELECT fs.log_switches_under_20_mins, ss.log_switches_over_20_mins FROM (SELECT  SUM(COUNT (ROUND((b.first_time - a.first_time) * 1440) )) "LOG_SWITCHES_UNDER_20_MINS"  FROM v$archived_log a, v$archived_log b WHERE a.sequence# + 1 = b.sequence# AND a.dest_id = 1 AND a.thread# = b.thread#  AND a.dest_id = b.dest_id AND a.dest_id = (SELECT MIN(dest_id) FROM gv$archive_dest WHERE target='PRIMARY' AND destination IS NOT NULL) AND ROUND((b.first_time - a.first_time) * 1440)  < 20 GROUP BY ROUND((b.first_time - a.first_time) * 1440))  fs, (SELECT  SUM(COUNT (ROUND((b.first_time - a.first_time) * 1440) )) "LOG_SWITCHES_OVER_20_MINS"  FROM v$archived_log a, v$archived_log b WHERE a.sequence# + 1 = b.sequence# AND a.dest_id = 1 AND a.thread# = b.thread#  AND a.dest_id = b.dest_id AND a.dest_id = (SELECT MIN(dest_id) FROM gv$archive_dest WHERE target='PRIMARY' AND destination IS NOT NULL) AND ROUND((b.first_time - a.first_time) * 1440)  > 19 GROUP BY ROUND((b.first_time - a.first_time) * 1440)) ss;
+
+column  minutes  format a12
+
+SELECT (CASE WHEN bucket = 1 THEN '<= ' || TO_CHAR(bucket * 5) WHEN (bucket >1 AND bucket < 9) THEN TO_CHAR(bucket * 5 - 4) || ' TO ' || TO_CHAR(bucket * 5) WHEN bucket > 8 THEN '>= ' || TO_CHAR(bucket * 5 - 4) END) "MINUTES", switches "LOG_SWITCHES" FROM (SELECT bucket , COUNT(b.bucket) SWITCHES FROM (SELECT WIDTH_BUCKET(ROUND((b.first_time - a.first_time) * 1440), 0, 40, 8) bucket FROM v$archived_log a, v$archived_log b WHERE a.sequence# + 1 = b.sequence# AND a.dest_id = b.dest_id  AND a.thread# = b.thread#  AND a.dest_id = (SELECT MIN(dest_id) FROM gv$archive_dest WHERE target = 'PRIMARY' AND destination IS NOT NULL)) b GROUP BY bucket ORDER BY bucket);
+
+SELECT thread#, group#, sequence#, bytes, archived ,status FROM v$log ORDER BY thread#, group#;
+
+SELECT thread#, group#, sequence#, bytes, archived, status FROM v$standby_log order by thread#, group#;
+
+column destination format a35 wrap
+column process format a7
+column ID format 99
+column mid format 99
+ 
+SELECT thread#, dest_id, destination, target, schedule, process FROM gv$archive_dest gvad, gv$instance gvi WHERE gvad.inst_id = gvi.inst_id AND destination is NOT NULL ORDER BY thread#, dest_id;
+
+set numwidth 8
+column archiver format a8
+column affirm format a6
+column error format a55 wrap
+column register format a8
+
+SELECT thread#, dest_id, gvad.archiver, transmit_mode, affirm, async_blocks, net_timeout, max_failure, delay_mins, reopen_secs reopen, register, binding FROM gv$archive_dest gvad, gv$instance gvi WHERE gvad.inst_id = gvi.inst_id AND destination is NOT NULL ORDER BY thread#, dest_id;
+
+SELECT thread#, dest_id, gvad.status, error, fail_sequence FROM gv$archive_dest gvad, gv$instance gvi WHERE gvad.inst_id = gvi.inst_id AND destination is NOT NULL ORDER BY thread#, dest_id;
+
+column message format a80
+
+SELECT gvi.thread#, timestamp, message FROM gv$dataguard_status gvds, gv$instance gvi WHERE gvds.inst_id = gvi.inst_id AND severity in ('Error','Fatal') ORDER BY timestamp, thread#;
+
+SELECT inst_id, thread#, process, pid, status, client_process, client_pid, sequence#, block#, active_agents, known_agents FROM gv$managed_standby ORDER BY thread#, pid;
+
+SELECT cu.thread#, cu.dest_id, la.lastarchived "Last Archived", cu.currentsequence "Current Sequence", appl.lastapplied "Last Applied" FROM (select gvi.thread#, gvd.dest_id, MAX(gvd.log_sequence) currentsequence FROM gv$archive_dest gvd, gv$instance gvi WHERE gvd.status = 'VALID' AND gvi.inst_id = gvd.inst_id GROUP BY thread#, dest_id) cu, (SELECT thread#, dest_id, MAX(sequence#) lastarchived FROM gv$archived_log WHERE resetlogs_change# = (SELECT resetlogs_change# FROM v$database) AND archived = 'YES' GROUP BY thread#, dest_id) la, (SELECT thread#, dest_id, MAX(sequence#) lastapplied FROM gv$archived_log WHERE resetlogs_change# = (SELECT resetlogs_change# FROM v$database) AND applied = 'YES' GROUP BY thread#, dest_id) appl WHERE cu.thread# = la.thread# AND cu.thread# = appl.thread# AND cu.dest_id = la.dest_id AND cu.dest_id = appl.dest_id ORDER BY 1, 2;
+
+set numwidth 8
+column dest_id format 99
+column Active format 99
+
+SELECT dest_id, database_mode, recovery_mode, protection_mode, standby_logfile_count, standby_logfile_active FROM v$archive_dest_status WHERE destination IS NOT NULL;
+
+column num noprint
+
+SELECT num, '*' "THREAD#", name, value FROM v$PARAMETER WHERE NUM IN (SELECT num FROM v$parameter WHERE (isdefault = 'FALSE' OR ismodified <> 'FALSE') AND name NOT LIKE 'nls%'
+MINUS
+SELECT num FROM gv$parameter gvp, gv$instance gvi WHERE num IN (SELECT DISTINCT gvpa.num FROM gv$parameter gvpa, gv$parameter gvpb WHERE gvpa.num = gvpb.num AND  gvpa.value <> gvpb.value AND (gvpa.isdefault = 'FALSE' OR gvpa.ismodified <> 'FALSE') AND gvpa.name NOT LIKE 'nls%') AND gvi.inst_id = gvp.inst_id  AND (gvp.isdefault = 'FALSE' OR gvp.ismodified <> 'FALSE') AND gvp.name NOT LIKE 'nls%')
+UNION
+SELECT num, TO_CHAR(thread#) "THREAD#", name, value FROM gv$parameter gvp, gv$instance gvi WHERE num IN (SELECT DISTINCT gvpa.num FROM gv$parameter gvpa, gv$parameter gvpb WHERE gvpa.num = gvpb.num AND gvpa.value <> gvpb.value AND (gvpa.isdefault = 'FALSE' OR gvpa.ismodified <> 'FALSE') AND gvp.name NOT LIKE 'nls%') AND gvi.inst_id = gvp.inst_id  AND (gvp.isdefault = 'FALSE' OR gvp.ismodified <> 'FALSE') AND gvp.name NOT LIKE 'nls%' ORDER BY 1, 2;
+
+spool off
+set markup html off entmap on
+set echo on
+
+=====================================================================================
+END - Complete details of Dataguard environment
+=====================================================================================
+
+=====================================================================================
+START - Data Guard health check - Primary Site Script (Doc ID 1581388.1)
+=====================================================================================
+
+-- This script is to be run on the Primary of a Data Guard Physical Standby Site
+
+set echo off 
+set feedback off 
+column timecol new_value tstamp 
+column spool_extension new_value suffix 
+select to_char(sysdate,'Mondd_hhmi') timecol from sys.dual; 
+column output new_value dbname 
+select value || '_' output from v$parameter where name = 'db_name'; 
+
+-- Output the results to this file
+
+spool dg_Primary_diag_&&dbname&&tstamp
+set lines 132
+set pagesize 500
+set numformat 999999999999999
+set trim on 
+set trims on 
+
+-- Get the current Date
+
+alter session set nls_date_format = 'DD-MON-YYYY HH24:MI:SS'; 
+set feedback on 
+select systimestamp from dual;
+
+-- Primary Site Details
+set heading off
+set feedback off
+select 'Primary Site Details' from dual;
+select '********************' from dual;
+set heading on
+set feedback on
+
+col db_unique_name format a15
+col flashb_on format a10
+
+select DB_UNIQUE_NAME,DATABASE_ROLE DB_ROLE,FORCE_LOGGING F_LOG,FLASHBACK_ON FLASHB_ON,LOG_MODE,OPEN_MODE,
+       GUARD_STATUS GUARD,PROTECTION_MODE PROT_MODE
+from v$database;
+
+-- Current SCN - this value on the primary and standby sites where real time apply is in place should be nearly the same
+
+set heading off
+set feedback off
+select 'Primary Site last generated SCN' from dual;
+select '*******************************' from dual;
+set heading on
+set feedback on
+
+select DB_UNIQUE_NAME,SWITCHOVER_STATUS,CURRENT_SCN from v$database;
+
+set heading off
+set feedback off
+select 'Standby Site last applied SCN' from dual;
+select '*****************************' from dual; 
+set heading on
+set feedback on
+
+select DEST_ID, APPLIED_SCN FROM v$archive_dest WHERE TARGET='STANDBY';
+
+
+-- Incarnation Information
+--
+
+set heading off
+set feedback off
+select 'Incarnation Destination Configuration' from dual;
+select '*************************************' from dual;
+set heading on
+set feedback on
+
+select INCARNATION# INC#, RESETLOGS_CHANGE# RS_CHANGE#, RESETLOGS_TIME, PRIOR_RESETLOGS_CHANGE# PRIOR_RS_CHANGE#, STATUS,FLASHBACK_DATABASE_ALLOWED FB_OK from v$database_incarnation;
+
+-- Archivelog Destination Details
+--
+
+set heading off
+set feedback off
+select 'Archive Destination Configuration' from dual;
+select '*********************************' from dual;
+set heading on
+set feedback on
+
+-- Current Archive Locations
+-- 
+ 
+column host_name format a30 tru 
+column version format a10 tru 
+select INSTANCE_NAME,HOST_NAME,VERSION,ARCHIVER from v$instance; 
+
+column destination format a35 wrap 
+column process format a7 
+column archiver format a8 
+column dest_id format 99999999 
+ 
+select DEST_ID,DESTINATION,STATUS,TARGET,ARCHIVER,PROCESS,REGISTER,TRANSMIT_MODE  
+from v$archive_dest
+where DESTINATION IS NOT NULL;
+
+column name format a22
+column value format a100
+select NAME,VALUE from v$parameter where NAME like 'log_archive_dest%' and upper(VALUE) like 'SERVICE%';
+
+set heading off
+set feedback off
+select 'Archive Destination Errors' from dual;
+select '**************************' from dual;
+set heading on
+set feedback on
+
+column error format a55 tru 
+select DEST_ID,STATUS,ERROR from v$archive_dest
+where DESTINATION IS NOT NULL;
+
+column message format a80 
+select MESSAGE, TIMESTAMP 
+from v$dataguard_status 
+where SEVERITY in ('Error','Fatal') 
+order by TIMESTAMP;
+
+-- Redo Log configuration
+-- The size of the standby redo logs must match exactly the size on the online redo logs
+
+set heading off
+set feedback off
+select 'Data Guard Redo Log Configuration' from dual;
+select '*********************************' from dual;
+set heading on
+set feedback on
+
+select GROUP# STANDBY_GROUP#,THREAD#,SEQUENCE#,BYTES,USED,ARCHIVED,STATUS from v$standby_log order by GROUP#,THREAD#;
+
+select GROUP# ONLINE_GROUP#,THREAD#,SEQUENCE#,BYTES,ARCHIVED,STATUS from v$log order by GROUP#,THREAD#;
+
+-- Data Guard Parameters
+--
+set heading off
+set feedback off
+select 'Data Guard Related Parameters' from dual;
+select '*****************************' from dual;
+set heading on
+set feedback on
+
+column name format a30
+column value format a100
+select NAME,VALUE from v$parameter where NAME IN ('db_unique_name','cluster_database','dg_broker_start','dg_broker_config_file1','dg_broker_config_file2','fal_client','fal_server','log_archive_config','log_archive_trace','log_archive_max_processes','archive_lag_target','remote_login_password_file','redo_transport_user') order by name;
+
+
+-- Redo Shipping Progress
+
+set heading off
+set feedback off
+select 'Data Guard Redo Shipping Progress' from dual;
+select '*********************************' from dual;
+set heading on
+set feedback on
+
+select systimestamp from dual;
+
+column client_pid format a10
+select PROCESS,STATUS,CLIENT_PROCESS,CLIENT_PID,THREAD#,SEQUENCE#,BLOCK#,ACTIVE_AGENTS,KNOWN_AGENTS
+from v$managed_standby  order by CLIENT_PROCESS,THREAD#,SEQUENCE#;
+
+host sleep 10
+
+select systimestamp from dual;
+
+select PROCESS,STATUS,CLIENT_PROCESS,CLIENT_PID,THREAD#,SEQUENCE#,BLOCK#,ACTIVE_AGENTS,KNOWN_AGENTS
+from v$managed_standby  order by CLIENT_PROCESS,THREAD#,SEQUENCE#;
+
+host sleep 10
+
+select systimestamp from dual;
+
+select PROCESS,STATUS,CLIENT_PROCESS,CLIENT_PID,THREAD#,SEQUENCE#,BLOCK#,ACTIVE_AGENTS,KNOWN_AGENTS
+from v$managed_standby  order by CLIENT_PROCESS,THREAD#,SEQUENCE#;
+
+
+set heading off
+set feedback off
+select 'Data Guard Errors in the Last Hour' from dual;
+select '**********************************' from dual;
+set heading on
+set feedback on
+
+select TIMESTAMP,SEVERITY,ERROR_CODE,MESSAGE from v$dataguard_status where timestamp > systimestamp-1/24;
+spool off
+ 
+=====================================================================================
+END - Data Guard health check - Primary Site Script
+=====================================================================================
+
+
+=====================================================================================
+START - Data Guard health check - Standby Site Script
+=====================================================================================
+
+-- This script is to be run on the Standby of a Data Guard Physical Standby Site
+
+set echo off 
+set feedback off 
+column timecol new_value tstamp 
+column spool_extension new_value suffix 
+select to_char(sysdate,'Mondd_hhmi') timecol from sys.dual; 
+column output new_value dbname 
+select value || '_' output from v$parameter where name = 'db_name'; 
+
+-- Output the results to this file
+
+spool dg_Standby_diag_&&dbname&&tstamp
+set lines 132
+set pagesize 500
+set numformat 999999999999999
+set trim on 
+set trims on 
+
+-- Get the current Date
+
+set feedback on 
+select systimestamp from dual;
+
+-- Standby Site Details
+set heading off
+set feedback off
+select 'Standby Site Details' from dual;
+select '********************' from dual;
+set heading on
+set feedback on
+
+col db_unique_name format a15
+col flashb_on format a10
+
+select DB_UNIQUE_NAME,DATABASE_ROLE DB_ROLE,FORCE_LOGGING F_LOG,FLASHBACK_ON FLASHB_ON,LOG_MODE,OPEN_MODE,
+       GUARD_STATUS GUARD,PROTECTION_MODE PROT_MODE
+from v$database;
+
+-- Current SCN - this value on the primary and standby sites where real time apply is in place should be nearly the same
+
+select DB_UNIQUE_NAME,SWITCHOVER_STATUS,CURRENT_SCN from v$database;
+
+-- Incarnation Information
+--
+
+set heading off
+set feedback off
+select 'Incarnation Destination Configuration' from dual;
+select '*************************************' from dual;
+set heading on
+set feedback on
+
+select INCARNATION# INC#, RESETLOGS_CHANGE# RS_CHANGE#, RESETLOGS_TIME, PRIOR_RESETLOGS_CHANGE# PRIOR_RS_CHANGE#, STATUS,FLASHBACK_DATABASE_ALLOWED FB_OK from v$database_incarnation;
+
+
+set heading off
+set feedback off
+select 'Archive Destination Configuration' from dual;
+select '*********************************' from dual;
+set heading on
+set feedback on
+-- Current Archive Locations
+-- 
+ 
+column host_name format a30 tru 
+column version format a10 tru 
+select INSTANCE_NAME,HOST_NAME,VERSION,ARCHIVER from v$instance; 
+
+column destination format a35 wrap 
+column process format a7 
+column archiver format a8 
+column dest_id format 99999999 
+ 
+select DEST_ID,DESTINATION,STATUS,TARGET,ARCHIVER,PROCESS,REGISTER,TRANSMIT_MODE  
+from v$archive_dest
+where DESTINATION IS NOT NULL;
+
+column name format a22
+column value format a100
+select NAME,VALUE from v$parameter where NAME like 'log_archive_dest%' and upper(VALUE) like 'SERVICE%';
+
+set heading off
+set feedback off
+select 'Archive Destination Errors' from dual;
+select '**************************' from dual;
+set heading on
+set feedback on
+
+column error format a55 tru 
+select DEST_ID,STATUS,ERROR from v$archive_dest
+where DESTINATION IS NOT NULL;
+
+column message format a80 
+select MESSAGE, TIMESTAMP 
+from v$dataguard_status 
+where SEVERITY in ('Error','Fatal') 
+order by TIMESTAMP;
+
+-- Redo Log configuration
+-- The size of the standby redo logs must match exactly the size on the online redo logs
+
+set heading off
+set feedback off
+select 'Data Guard Redo Log Configuration' from dual;
+select '*********************************' from dual;
+set heading on
+set feedback on
+
+select GROUP# STANDBY_GROUP#,THREAD#,SEQUENCE#,BYTES,USED,ARCHIVED,STATUS from v$standby_log order by GROUP#,THREAD#;
+
+select GROUP# ONLINE_GROUP#,THREAD#,SEQUENCE#,BYTES,ARCHIVED,STATUS from v$log order by GROUP#,THREAD#;
+
+-- Data Guard Parameters
+--
+set heading off
+set feedback off
+select 'Data Guard Related Parameters' from dual;
+select '*****************************' from dual;
+set heading on
+set feedback on
+
+column name format a30
+column value format a100
+select NAME,VALUE from v$parameter where NAME IN ('db_unique_name','cluster_database','dg_broker_start','dg_broker_config_file1','dg_broker_config_file2','fal_client','fal_server','log_archive_config','log_archive_trace','log_archive_max_processes','archive_lag_target','remote_login_password_file','redo_transport_user') order by name;
+
+-- Managed Recovery State
+
+set heading off
+set feedback off
+select 'Data Guard Apply Status' from dual;
+select '***********************' from dual;
+set heading on
+set feedback on
+
+select systimestamp from dual;
+
+column client_pid format a10
+select PROCESS,STATUS,CLIENT_PROCESS,CLIENT_PID,THREAD#,SEQUENCE#,BLOCK#,ACTIVE_AGENTS,KNOWN_AGENTS
+from v$managed_standby  order by CLIENT_PROCESS,THREAD#,SEQUENCE#;
+
+host sleep 10
+
+select systimestamp from dual;
+
+select PROCESS,STATUS,CLIENT_PROCESS,CLIENT_PID,THREAD#,SEQUENCE#,BLOCK#,ACTIVE_AGENTS,KNOWN_AGENTS
+from v$managed_standby  order by CLIENT_PROCESS,THREAD#,SEQUENCE#;
+
+host sleep 10
+
+select systimestamp from dual;
+
+select PROCESS,STATUS,CLIENT_PROCESS,CLIENT_PID,THREAD#,SEQUENCE#,BLOCK#,ACTIVE_AGENTS,KNOWN_AGENTS
+from v$managed_standby  order by CLIENT_PROCESS,THREAD#,SEQUENCE#;
+
+
+set heading off
+set feedback off
+select 'Data Guard Apply Lag' from dual;
+select '********************' from dual;
+set heading on
+set feedback on
+
+column name format a12
+column lag_time format a20
+column datum_time format a20
+column time_computed format a20
+SELECT NAME, VALUE LAG_TIME, DATUM_TIME, TIME_COMPUTED 
+from V$DATAGUARD_STATS where name like 'apply lag';
+
+-- If there is a lag remove the comment for the select below
+--SELECT * FROM V$STANDBY_EVENT_HISTOGRAM WHERE NAME = 'apply lag'  AND COUNT > 0;
+
+set heading off
+set feedback off
+select 'Data Guard Gap Problems' from dual;
+select '***********************' from dual;
+set heading on
+set feedback on
+
+select * from v$archive_gap; 
+
+set heading off
+set feedback off
+select 'Data Guard Errors in the Last Hour' from dual;
+select '**********************************' from dual;
+set heading on
+set feedback on
+
+select TIMESTAMP,SEVERITY,ERROR_CODE,MESSAGE from v$dataguard_status where timestamp > systimestamp-1/24;
+spool off
+
+=====================================================================================
+END - Data Guard health check - Standby Site Script
+=====================================================================================
+
+
+
+Active dataguard check
+================
+How to Verify if Active Data Guard is Enabled (Doc ID 2098495.1)
+
+run the following queries on the physical Standby database, for example:
+
+SQL> select 'Using Active Data Guard' ADG from v$managed_standby m, v$database d where m.process like 'MRP%' ;
+
+
+ADG
+-----------------------
+Using Active Data Guard
+
+ 
+SQL> select open_mode, controlfile_type from v$database;
+
+OPEN_MODE                    CONTROLFILE
+----------------------------------------------
+READ ONLY WITH APPLY      STANDBY
+
+===================================================================================================================
+
+This query is used on PRIMARY TO know the LAG status (best query)
+
+
+col thread# form 999
+col no_seq form a20
+col yes_seq form a20
+col lag form a6
+col dummy noprint
+col lag for 999,999
+break on dummy skip 1 on report
+compute sum of lag on dummy
+select null as dummy
+, t.thread#
+, t.not_appld_seq
+, t.applied_seq
+, t.lag
+, mp.status
+, mp.sequence#
+from (select yes.thread# thread#
+, greatest(nvl(no.max_seq,0),yes.max_seq) not_appld_seq
+, yes.max_seq applied_seq
+, to_number(greatest(nvl(no.max_seq,0),yes.max_seq)-yes.max_seq) lag
+from
+(select thread#
+, max(sequence#) max_seq
+from v$archived_log
+where applied in ('YES','IN-MEMORY')
+GROUP by thread#) yes,
+(select thread#
+, max(sequence#) max_seq
+from v$archived_log
+where applied='NO'
+GROUP by thread#) no
+where yes.thread#=no.thread#(+) ) t,
+(select process
+, thread#
+, sequence#
+, status
+from gv$managed_standby
+where process = 'MRP0') mp
+where t.thread# = mp.thread#(+)
+order by t.thread#;
+
+
+
+
+select THREAD#,max(SEQUENCE#) from gv$log_history group by thread#;
+
+SELECT ARCH.THREAD# "Thread", ARCH.SEQUENCE# "Last Sequence Received", APPL.SEQUENCE# "Last Sequence Applied", (ARCH.SEQUENCE# - APPL.SEQUENCE#) "Difference"
+FROM  (SELECT THREAD# ,SEQUENCE# FROM GV$ARCHIVED_LOG WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM GV$ARCHIVED_LOG GROUP BY THREAD#)) ARCH,(SELECT THREAD# ,SEQUENCE# FROM GV$LOG_HISTORY WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM GV$LOG_HISTORY GROUP BY THREAD#)) APPL WHERE ARCH.THREAD# = APPL.THREAD# ORDER BY 1;
+
+ALTER SESSION SET NLS_DATE_FORMAT = 'DD-MON-YYYY HH24:MI:SS';
+SELECT   a.thread#,  b.last_seq, a.applied_seq, a.last_app_timestamp, b.last_seq-a.applied_seq   ARC_DIFF FROM (SELECT  thread#, MAX(sequence#) applied_seq, MAX(next_time) last_app_timestamp FROM gv$archived_log WHERE applied = 'YES' GROUP BY thread#) a,(SELECT  thread#, MAX (sequence#) last_seq FROM gv$archived_log GROUP BY thread#) b WHERE a.thread# = b.thread#;
+
+Output
+======== 
+ THREAD#   LAST_SEQ APPLIED_SEQ LAST_APP_TIMESTAMP     ARC_DIFF
+---------- ---------- ----------- -------------------- ----------
+         1     133611      133611 09-APR-2019 11:36:46          0
+         2      50969       50969 09-APR-2019 09:17:22          0
+
+
+
+
+
+select name from v$database;
+set lines 200
+select * from v$flash_recovery_area_usage;
+
+select NAME,SEQUENCE#,ARCHIVED,APPLIED,DELETED,STATUS from v$archived_log where SEQUENCE#=5156;
+
+catalog start with '/ora/app/oracle/admin/CALP/arch/CALP'  -- command to register log file to standby.( through RMAN).
+
+
+select THREAD#, SEQUENCE#, FIRST_CHANGE#, NEXT_CHANGE#, deleted from  v$archived_log where SEQUENCE# in (453483) and dest_id=1;
+
+select THREAD#, SEQUENCE# , applied, Deleted, Status from  v$archived_log where FIRST_CHANGE#>=597244354798 and DELETED='YES';
+
+select NAME,SEQUENCE#,thread#, FIRST_TIME, ARCHIVED,APPLIED,DELETED,STATUS,backup_count from v$archived_log where SEQUENCE#=199648;
+
+select THREAD#, SEQUENCE# , applied, Deleted, Status from  v$archived_log where FIRST_CHANGE#>=6.0014E+11 and DELETED='YES' and applied='NO' order by THREAD#;
+
+
+
+col EVENT format a30
+set lines 120
+select EVENT, total_waits, total_timeouts, time_waited, average_wait
+from v$system_event 
+where event in ('log file sync','log file parallel write'); 
+
+####ON PRIMARY TO KNOW CURRENT SEQUENCE#########
+
+SELECT THREAD# "Thread",SEQUENCE# "Last Sequence Generated"
+FROM V$ARCHIVED_LOG
+WHERE (THREAD#,FIRST_TIME ) IN (SELECT THREAD#,MAX(FIRST_TIME) FROM V$ARCHIVED_LOG GROUP BY THREAD#)
+ORDER BY 1;
+ 
+SQL>startup;
+SQL>ALTER DATABASE RECOVER MANAGED STANDBY DATABASE NOPARALLEL USING CURRENT LOGFILE DISCONNECT;
+
+>>IDR
+
+Dr-idr:
+SQL>startup;
+SQL>ALTER DATABASE RECOVER MANAGED STANDBY DATABASE PARALLEL 10 USING CURRENT LOGFILE DISCONNECT;
+
+
+
+#########ON STANDBY##########
+
+------TO verify existing archived redo logs,
+
+SELECT SEQUENCE#, FIRST_TIME, NEXT_TIME FROM V$ARCHIVED_LOG ORDER BY SEQUENCE#;
+
+-----To verify the logs that were applied recently,
+
+set linesize 500
+col NAME format a70;
+SELECT SEQUENCE#,NAME,APPLIED FROM V$ARCHIVED_LOG where applied='NO' ORDER BY SEQUENCE# ;
+
+
+
+#######ON PRIMARY DATABASE##########
+
+-----TO verify which log SEQ# is not applied to standby,
+
+
+SELECT LOCAL.THREAD#, LOCAL.SEQUENCE# FROM
+   (SELECT THREAD#, SEQUENCE# FROM V$ARCHIVED_LOG WHERE DEST_ID=1)
+   LOCAL WHERE
+   LOCAL.SEQUENCE# NOT IN
+   (SELECT SEQUENCE# FROM V$ARCHIVED_LOG WHERE DEST_ID=2 AND
+   THREAD# = LOCAL.THREAD#);
+
+------To know the process status on both primary and standby,
+
+
+SELECT PROCESS, STATUS, THREAD#, SEQUENCE#, BLOCK#, BLOCKS FROM V$MANAGED_STANDBY
+
+
+------To Know the status of datagaurd on both,
+
+SELECT MESSAGE FROM V$DATAGUARD_STATUS;
+
+How to check ACTIVE DATA GUARD IS ENABLED OR NOT
+===================================================== 
+
+How to Verify if Active Data Guard is Enabled (Doc ID 2098495.1)
+
+On standby db fire below queries...
+
+SQL> select open_mode, controlfile_type from v$database;
+
+OPEN_MODE CONTROLFILE
+----------------------------------------------
+READ ONLY WITH APPLY STANDBY
+
+(or)
+
+SQL> select  'Using Active Data Guard' ADG   from v$managed_standby m,v$database d where m.process like 'MRP%'  ;
+
+ADG
+-----------------------
+Using Active Data Guard
+
+
+==============================
+Queries from Venu
+=================================
+On primary
+-------------
+a) select thread#, max(sequence#) "Last Primary Seq Generated" from  v$archived_log val, v$database vdb where val.resetlogs_change# = vdb.resetlogs_change# group by thread# order by 1;
+
+select INSTANCE_NUMBER,INSTANCE_NAME,HOST_NAME,STARTUP_TIME,STATUS,DATABASE_STATUS,INSTANCE_ROLE from gv$instance;
+
+On stand by
+-----------
+a) select   thread#, max(sequence#) "Last Standby Seq Received" from v$archived_log val, v$database vdb where val.resetlogs_change# = vdb.resetlogs_change# group by thread# order by 1;
+
+b) select thread#, max(sequence#) "Last Standby Seq Applied" from v$archived_log val, v$database vdb where val.resetlogs_change# = vdb.resetlogs_change# and val.applied='YES' group by thread# order by 1;
+
+c) select message from v$dataguard_status;
+
+==================================================================
